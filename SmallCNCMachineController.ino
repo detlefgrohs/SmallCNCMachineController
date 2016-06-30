@@ -1,3 +1,5 @@
+#include <TaskScheduler.h>
+
 /*
   SmallCNCMachineController
 
@@ -19,6 +21,20 @@ const int Backward = 1;
 const int XAxis = 0;
 const int YAxis = 1;
 
+// Callback Prototypes
+void SerialController();
+void Controller();
+void XAxisController();
+void YAxisController();
+
+// Tasks
+Task SerialControllerTask(250, TASK_FOREVER, &SerialController);
+Task ControllerTask(100, TASK_FOREVER, &Controller);
+Task XAxisControllerTask(1, TASK_FOREVER, &XAxisController);
+Task YAxisControllerTask(1, TASK_FOREVER, &YAxisController);
+
+Scheduler TaskRunner;
+
 void setup() {
 
   pinMode(MotorEnablePin, OUTPUT);
@@ -36,11 +52,46 @@ void setup() {
   digitalWrite(XAxisStpPin, LOW);
   digitalWrite(YAxisDirPin, LOW);
   digitalWrite(YAxisStpPin, LOW);
+
+  // Setup the Serial communications
+  Serial.begin(9600);   // What should this actually be?
+  while (!Serial)
+    ; // Wait for the serial port to connect
+
+  // Setup the tasks
+  TaskRunner.init();
+  TaskRunner.addTask(SerialControllerTask);
+  TaskRunner.addTask(ControllerTask);
+  TaskRunner.addTask(XAxisControllerTask);
+  TaskRunner.addTask(YAxisControllerTask);
+
+  SerialControllerTask.enable();
+  ControllerTask.enable();
+  XAxisControllerTask.enable();
+  YAxisControllerTask.enable();
 }
 
 void loop() {
+  TaskRunner.execute();
+}
+
+void SerialController() {
+    if (Serial.available()) {  
 
 
+
+  }
+}
+
+void Controller() {
+  
+}
+
+void XAxisController() {
+
+}
+
+void YAxisController() {
 
 }
 
