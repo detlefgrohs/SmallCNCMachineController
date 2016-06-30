@@ -8,12 +8,14 @@
 
 const int DelayMSecs = 1;
 
-const int MotorEnablePin = 13;
+const int LedPin = 13;
 
-const int XAxisDirPin = 13;
-const int XAxisStpPin = 13;
-const int YAxisDirPin = 13;
-const int YAxisStpPin = 13;
+const int MotorEnablePin = 12;
+
+const int XAxisDirPin = 11;
+const int XAxisStpPin = 10;
+const int YAxisDirPin = 9;
+const int YAxisStpPin = 8;
 
 const int Forward = 0;
 const int Backward = 1;
@@ -28,14 +30,16 @@ void XAxisController();
 void YAxisController();
 
 // Tasks
-Task SerialControllerTask(250, TASK_FOREVER, &SerialController);
-Task ControllerTask(100, TASK_FOREVER, &Controller);
+Task SerialControllerTask(500, TASK_FOREVER, &SerialController);
+Task ControllerTask(250, TASK_FOREVER, &Controller);
 Task XAxisControllerTask(1, TASK_FOREVER, &XAxisController);
 Task YAxisControllerTask(1, TASK_FOREVER, &YAxisController);
 
 Scheduler TaskRunner;
 
 void setup() {
+
+  pinMode(LedPin, OUTPUT);
 
   pinMode(MotorEnablePin, OUTPUT);
 
@@ -76,15 +80,58 @@ void loop() {
 }
 
 void SerialController() {
-    if (Serial.available()) {  
+    while (Serial.available()) {  
+      int inChar = Serial.read();
 
-
-
+      switch(inChar) {
+        case char('O'):
+          Serial.println("Enable Motors");
+          digitalWrite(MotorEnablePin, LOW);
+          break;
+        case char('o'):
+          Serial.println("Disable Motors");
+          digitalWrite(MotorEnablePin, HIGH);
+          break;
+        case char('X'):
+          Serial.println("Jog X Forward");
+          StepXAxis(Forward);
+          break;
+        case char('x'):
+          Serial.println("Jog X Backward");
+          StepXAxis(Backward);
+          break;
+        case char('L'):
+          Circuit();
+          break;
+        default:
+          Serial.print("Unprocessed: ");
+          Serial.println(inChar);
+          break;
+      }
   }
 }
 
-void Controller() {
+void Circuit() {
+  int steps = 200;
+
+  for(int count = steps; count > 0; count--)
+    StepXAxis(Forward);
+  for(int count = steps; count > 0; count--)
+    StepYAxis(Forward);
+  for(int count = steps; count > 0; count--)
+    StepXAxis(Backward);
+  for(int count = steps; count > 0; count--)
+    StepYAxis(Backward);
+    
   
+}
+
+void Controller() {
+  if (digitalRead(LedPin))
+    digitalWrite(LedPin, LOW);
+  else
+    digitalWrite(LedPin, HIGH);
+    
 }
 
 void XAxisController() {
