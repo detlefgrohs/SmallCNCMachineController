@@ -4,24 +4,20 @@
   This is a 2 axis machine that will control a laser module (either .5 or 2 Watt) (40 Watt CO2 to Follow ;-) )
 */
 
-DelayMSecs = 1;
+const int DelayMSecs = 1;
 
-MotorEnablePin = 13;
+const int MotorEnablePin = 13;
 
-XAxisDirPin = 13;
-XAxisStpPin = 13;
-YAxisDirPin = 13;
-YAxisStpPin = 13;
+const int XAxisDirPin = 13;
+const int XAxisStpPin = 13;
+const int YAxisDirPin = 13;
+const int YAxisStpPin = 13;
 
-enum StepDirection {
-  Forward,
-  Backward
-}
+const int Forward = 0;
+const int Backward = 1;
 
-enum Axis {
-  X,
-  Y
-}
+const int XAxis = 0;
+const int YAxis = 1;
 
 void setup() {
 
@@ -48,34 +44,34 @@ void loop() {
 
 }
 
-void StepMotor(Axis axis, StepDirection stepDirection) {
+void StepMotor(int axis, int stepDirection) {
   switch(axis) {
-    case Axis.X: 
+    case XAxis: 
       StepXAxis(stepDirection);
       break;
-    case Axis.Y:
+    case YAxis:
       StepYAxis(stepDirection);
       break;
   }
 }
 
-void StepXAxis(StepDirection stepDirection) {
+void StepXAxis(int stepDirection) {
   SingleStepMotor(XAxisStpPin, XAxisDirPin, stepDirection);
 }
 
-void StepYAxis(StepDirection stepDirection) {
+void StepYAxis(int stepDirection) {
   SingleStepMotor(YAxisStpPin, YAxisDirPin, stepDirection);
 }
 
-void SingleStepMotor(int stpPin, int dirPin, StepDirection stepDirection) {
-  if (stepDirection == StepDirection.Forward && digitalRead(dirPin))
+void SingleStepMotor(int stpPin, int dirPin, int stepDirection) {
+  if (stepDirection == Forward && digitalRead(dirPin))
     digitalWrite(dirPin, LOW);
-  if (stepDirection == StepDirection.Backward && !digitalRead(dirPin))
+  if (stepDirection == Backward && !digitalRead(dirPin))
     digitalWrite(dirPin, HIGH);
 
-  digitalWrite(stpPin, High);
+  digitalWrite(stpPin, HIGH);
   delay(DelayMSecs);
-  digitalWrite(stpPin, Low);
+  digitalWrite(stpPin, LOW);
   delay(DelayMSecs);
 }
 
