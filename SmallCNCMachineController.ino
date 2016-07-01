@@ -103,6 +103,9 @@ void SerialController() {
         case char('L'):
           Circuit();
           break;
+        case char('V'):
+          Serial.println("Version Beta Mark 1");
+          break;
         default:
           Serial.print("Unprocessed: ");
           Serial.println(inChar);
