@@ -52,9 +52,13 @@ LinkedList<String> *MessageQueue = new LinkedList<String>();
 // Movement stuff...
 int XAxisStepCurrentPosition = 0;
 int XAxisStepDesiredPosition = 0;
-//int XAxisDir = Forward;
 int XAxisRate = 1;
 int XAxisCount = 0;
+
+int YAxisStepCurrentPosition = 0;
+int YAxisStepDesiredPosition = 0;
+int YAxisRate = 1;
+int YAxisCount = 0;
 
 // ======================================================================
 
@@ -150,14 +154,16 @@ void Controller() {
 
     if (message.startsWith("M0")) {
       Serial.println("Motors off.");
+      digitalWrite(MotorEnablePin, HIGH);
     } else if (message.startsWith("M114")){
       Serial.print("X:");
       Serial.print(XAxisStepCurrentPosition);
       Serial.print(" Y:");
-      Serial.print(0);
+      Serial.print(YAxisStepCurrentPosition);
       Serial.println();
     } else if (message.startsWith("M1")){
       Serial.println("Motors on.");
+      digitalWrite(MotorEnablePin, LOW);
     } else if (message.startsWith("G0")){
       int moveX = message.substring(message.indexOf("X") + 1).toInt();
       int moveY = message.substring(message.indexOf("Y") + 1).toInt();
@@ -171,6 +177,10 @@ void Controller() {
       XAxisStepDesiredPosition = moveX;
       XAxisCount = 0;
       XAxisRate = 1;
+      
+      YAxisStepDesiredPosition = moveY;
+      YAxisCount = 0;
+      YAxisRate = 1;
     } else if (message.startsWith("G1")){
       int moveX = message.substring(message.indexOf("X") + 1).toInt();
       int moveY = message.substring(message.indexOf("Y") + 1).toInt();
@@ -183,7 +193,11 @@ void Controller() {
 
       XAxisStepDesiredPosition = moveX;
       XAxisCount = 0;
-      XAxisRate = 100;
+      XAxisRate = 10;
+      
+      YAxisStepDesiredPosition = moveY;
+      YAxisCount = 0;
+      YAxisRate = 10;
     } else {
       Serial.print("Unprocessed Message: '");
       Serial.print(message);
@@ -193,7 +207,8 @@ void Controller() {
 }
 
 boolean IsMachineMoving() {
-  if (XAxisStepDesiredPosition != XAxisStepCurrentPosition)
+  if ((XAxisStepDesiredPosition != XAxisStepCurrentPosition) ||
+      (YAxisStepDesiredPosition != YAxisStepCurrentPosition))
     return true;
 
   return false;
@@ -211,10 +226,9 @@ void XAxisController() {
       if ((XAxisStepDesiredPosition < XAxisStepCurrentPosition) && !digitalRead(XAxisDirPin))
         digitalWrite(XAxisDirPin, HIGH);
 
-      //
+      // Now step the motor and update the position on the return to low...
       if (digitalRead(XAxisStpPin)) {
         digitalWrite(XAxisStpPin, LOW);
-        Serial.println("XAxis Low");
 
         if (XAxisStepDesiredPosition > XAxisStepCurrentPosition)
           XAxisStepCurrentPosition ++;
@@ -222,14 +236,36 @@ void XAxisController() {
           XAxisStepCurrentPosition --;
       } else {
         digitalWrite(XAxisStpPin, HIGH);
-        Serial.println("XAxis High");
       }
     }
   }
 }
 
 void YAxisController() {
+  if (YAxisStepDesiredPosition != YAxisStepCurrentPosition) {
+    YAxisCount--; // Decrement the count so we know the next pulse that we need...
+    if (YAxisCount <= 0) {
+      YAxisCount = YAxisRate; // Set the count to the rate...
 
+      // Set the direction
+      if ((YAxisStepDesiredPosition > YAxisStepCurrentPosition) && digitalRead(YAxisDirPin))
+        digitalWrite(YAxisDirPin, LOW);
+      if ((YAxisStepDesiredPosition < YAxisStepCurrentPosition) && !digitalRead(YAxisDirPin))
+        digitalWrite(YAxisDirPin, HIGH);
+
+      // Now step the motor and update the position on the return to low...
+      if (digitalRead(YAxisStpPin)) {
+        digitalWrite(YAxisStpPin, LOW);
+
+        if (YAxisStepDesiredPosition > YAxisStepCurrentPosition)
+          YAxisStepCurrentPosition ++;
+        else
+          YAxisStepCurrentPosition --;
+      } else {
+        digitalWrite(YAxisStpPin, HIGH);
+      }
+    }
+  }
 }
 
 void StepMotor(int axis, int stepDirection) {
