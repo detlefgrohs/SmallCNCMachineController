@@ -1,28 +1,36 @@
-#include <LinkedList.h>
-#include <TaskScheduler.h>
 
 /*
   SmallCNCMachineController
 
   This is a 2 axis machine that will control a laser module (either .5 or 2 Watt) (40 Watt CO2 to Follow ;-) )
 */
+#include <LinkedList.h>
+#include <TaskScheduler.h>
+#include <AccelStepper.h>
+#include <MultiStepper.h>
+//#include <Adafruit_MotorShield.h>
 
-const int DelayMSecs = 1;
+class Coordinate {
+  public:
+    long X;
+    long Y;
+
+    long int asLongArray[2];
+
+    void toLongArray();
+};
+
+const int DelayuSecs = 100;
 
 const int HeartbeatLedPin = 13;
 
-const int MotorEnablePin = 12;
+const int EnableSteppers = 12;
 
-const int XAxisDirPin = 11;
-const int XAxisStpPin = 10;
-const int YAxisDirPin = 9;
-const int YAxisStpPin = 8;
+const int XAxisStepperDirPin = 11;
+const int XAxisStepperStpPin = 10;
 
-const int Forward = 0;
-const int Backward = 1;
-
-const int XAxis = 0;
-const int YAxis = 1;
+const int YAxisStepperDirPin = 9;
+const int YAxisStepperStpPin = 8;
 
 // ======================================================================
 
@@ -32,14 +40,10 @@ Scheduler TaskRunner;
 // Callback Prototypes
 void SerialController();
 void Controller();
-void XAxisController();
-void YAxisController();
 
 // Tasks
 Task SerialControllerTask(500, TASK_FOREVER, &SerialController);
 Task ControllerTask(250, TASK_FOREVER, &Controller);
-Task XAxisControllerTask(1, TASK_FOREVER, &XAxisController);
-Task YAxisControllerTask(1, TASK_FOREVER, &YAxisController);
 
 // ======================================================================
 
@@ -48,39 +52,40 @@ String CurrentMessage = "";
 LinkedList<String> *MessageQueue = new LinkedList<String>();
 
 // ======================================================================
+//Adafruit_MotorShield AFMStop(0x60); // Default address, no jumpers
 
-// Movement stuff...
-int XAxisStepCurrentPosition = 0;
-int XAxisStepDesiredPosition = 0;
-int XAxisRate = 1;
-int XAxisCount = 0;
+//Adafruit_StepperMotor *XAxisStepper = AFMStop.getStepper(200, 1);
+//Adafruit_StepperMotor *YAxisStepper = AFMStop.getStepper(200, 2);
 
-int YAxisStepCurrentPosition = 0;
-int YAxisStepDesiredPosition = 0;
-int YAxisRate = 1;
-int YAxisCount = 0;
+void XAxisForward() {  
+  //XAxisStepper->onestep(FORWARD, SINGLE);
+}
+void XAxisBackward() {  
+  //XAxisStepper->onestep(BACKWARD, SINGLE);
+}
+void YAxisForward() {  
+  //YAxisStepper->onestep(FORWARD, SINGLE);
+}
+void YAxisBackward() {  
+  //YAxisStepper->onestep(BACKWARD, SINGLE);
+}
 
-// ======================================================================
+//AccelStepper XAxisController(XAxisForward, XAxisBackward);
+AccelStepper XAxisController(AccelStepper::DRIVER, XAxisStepperStpPin, XAxisStepperDirPin, 0, 0, true);
+//AccelStepper YAxisController(YAxisForward, YAxisBackward);
+AccelStepper YAxisController(AccelStepper::DRIVER, YAxisStepperStpPin, YAxisStepperDirPin, 0, 0, true);
+
+MultiStepper XYAxis;
+
+//long Coordinates[2];
+void Coordinate::toLongArray() {
+  asLongArray[0] = X;
+  asLongArray[1] = Y;
+}
 
 void setup() {
 
   pinMode(HeartbeatLedPin, OUTPUT);
-
-  pinMode(MotorEnablePin, OUTPUT);
-
-  pinMode(XAxisDirPin, OUTPUT);
-  pinMode(XAxisStpPin, OUTPUT);
-  pinMode(YAxisDirPin, OUTPUT);
-  pinMode(YAxisStpPin, OUTPUT);
-
-  // Disable the Motors by Default
-  digitalWrite(MotorEnablePin, HIGH);
-
-  // Set starting state of all pins...
-  digitalWrite(XAxisDirPin, LOW);
-  digitalWrite(XAxisStpPin, LOW);
-  digitalWrite(YAxisDirPin, LOW);
-  digitalWrite(YAxisStpPin, LOW);
 
   // Setup the Serial communications
   Serial.begin(115200);   // What should this actually be?
@@ -91,17 +96,39 @@ void setup() {
   TaskRunner.init();
   TaskRunner.addTask(SerialControllerTask);
   TaskRunner.addTask(ControllerTask);
-  TaskRunner.addTask(XAxisControllerTask);
-  TaskRunner.addTask(YAxisControllerTask);
 
   SerialControllerTask.enable();
   ControllerTask.enable();
-  XAxisControllerTask.enable();
-  YAxisControllerTask.enable();
+
+  // A4988 Stepper Driver
+  pinMode(EnableSteppers, OUTPUT);
+  pinMode(XAxisStepperDirPin, OUTPUT);
+  pinMode(XAxisStepperStpPin, OUTPUT);
+  pinMode(YAxisStepperDirPin, OUTPUT);
+  pinMode(YAxisStepperStpPin, OUTPUT);
+
+  // Disable Steppers by Default
+  digitalWrite(EnableSteppers, HIGH); 
+  
+  //
+  //AFMStop.begin();
+
+  // Setup steppers
+  XAxisController.setMinPulseWidth(500);
+  //XAxisController.setMaxSpeed(200.0);
+  //XAxisController.setAcceleration(100.0);
+  
+  YAxisController.setMinPulseWidth(500);
+  //YAxisController.setMaxSpeed(200.0);
+  //YAxisController.setAcceleration(100.0);
+
+  XYAxis.addStepper(XAxisController);
+  XYAxis.addStepper(YAxisController);
 }
 
 void loop() {
   TaskRunner.execute();
+  XYAxis.run();
 }
 
 void SerialController() {
@@ -112,10 +139,11 @@ void SerialController() {
       {
         if (CurrentMessage.length() > 0) {
           // Push the message to the end of the queue
-          if (CurrentMessage.startsWith("M126")) {
+          if (CurrentMessage.startsWith("M124")) {
             // Emergency Stop
             MessageQueue->clear();
             Serial.println("Emergency Stop.");
+            MotorsOff();
           } else {
             MessageQueue->add(CurrentMessage);
           }
@@ -128,77 +156,108 @@ void SerialController() {
   }
 }
 
-void Circuit() {
-  int steps = 200;
+int MessageNumber(String message) {
+  return message.substring(1).toInt();
+}
 
-  for(int count = steps; count > 0; count--)
-    StepXAxis(Forward);
-  for(int count = steps; count > 0; count--)
-    StepYAxis(Forward);
-  for(int count = steps; count > 0; count--)
-    StepXAxis(Backward);
-  for(int count = steps; count > 0; count--)
-    StepYAxis(Backward);
+Coordinate getCurrentCoordinates() {
+  Coordinate coordinate;
+  coordinate.X = XAxisController.currentPosition();
+  coordinate.Y = YAxisController.currentPosition();
+  return coordinate;
+}
+
+void printCoordinates(Coordinate coordinate) {
+      Serial.print("X:");
+      Serial.print(coordinate.X);
+      Serial.print(" Y:");
+      Serial.print(coordinate.Y);
+      Serial.println();
+}
+
+bool MessageM(String message) {
+  switch (MessageNumber(message)) {
+    case 17:
+      Serial.println("Motors on.");
+      MotorsOn();
+      return true;
+    case 18:
+      Serial.println("Motors off.");
+      MotorsOff();
+      return true;
+    case 114:
+      printCoordinates(getCurrentCoordinates());
+      return true;
+  }
+  return false;
+}
+
+Coordinate parseCoordinate(String message, Coordinate currentCoordinate) {
+  int indexOfX = message.indexOf("X");
+  int indexOfY = message.indexOf("Y");
+
+  if (indexOfX > -1)
+    currentCoordinate.X = message.substring(indexOfX + 1).toInt();
+
+  if (indexOfY > -1)
+    currentCoordinate.Y = message.substring(indexOfY + 1).toInt();
+
+  return currentCoordinate;
+}
+
+bool MessageG(String message) {
+  Coordinate coordinate;
+  
+  switch (MessageNumber(message)) {
+    case 0:
+      coordinate = parseCoordinate(message, getCurrentCoordinates());
+
+      Serial.print("Rapid Move ");
+      printCoordinates(coordinate);
+
+      XAxisController.setMaxSpeed(1000.0);
+      YAxisController.setMaxSpeed(1000.0);
+
+      coordinate.toLongArray();
+      XYAxis.moveTo(coordinate.asLongArray);
+      return true;
+    case 1:
+      coordinate = parseCoordinate(message, getCurrentCoordinates());
+
+      Serial.print("Move ");
+      printCoordinates(coordinate);
+
+      XAxisController.setMaxSpeed(100.0);
+      YAxisController.setMaxSpeed(100.0);
+
+      coordinate.toLongArray();
+      XYAxis.moveTo(coordinate.asLongArray);
+      return true;
+  }
+  return false;
+}
+
+bool MessageV(String message) {
+  Serial.println("Version 0.0 Mk 1");
+  return true;
 }
 
 void Controller() {
   // Heartbeat
-  if (digitalRead(HeartbeatLedPin))
-    digitalWrite(HeartbeatLedPin, LOW);
-  else
-    digitalWrite(HeartbeatLedPin, HIGH);
+  if (digitalRead(HeartbeatLedPin)) digitalWrite(HeartbeatLedPin, LOW);
+  else                              digitalWrite(HeartbeatLedPin, HIGH);
 
+  // Process Messages
   if (MessageQueue->size() > 0 && !IsMachineMoving()) {
     // Pop the first message in the message queue
     String message = MessageQueue->remove(0);
 
-    if (message.startsWith("M0")) {
-      Serial.println("Motors off.");
-      digitalWrite(MotorEnablePin, HIGH);
-    } else if (message.startsWith("M114")){
-      Serial.print("X:");
-      Serial.print(XAxisStepCurrentPosition);
-      Serial.print(" Y:");
-      Serial.print(YAxisStepCurrentPosition);
-      Serial.println();
-    } else if (message.startsWith("M1")){
-      Serial.println("Motors on.");
-      digitalWrite(MotorEnablePin, LOW);
-    } else if (message.startsWith("G0")){
-      int moveX = message.substring(message.indexOf("X") + 1).toInt();
-      int moveY = message.substring(message.indexOf("Y") + 1).toInt();
-      
-      Serial.print("Rapid Move X:");
-      Serial.print(moveX);
-      Serial.print(" Y:");
-      Serial.print(moveY);
-      Serial.println();
-
-      XAxisStepDesiredPosition = moveX;
-      XAxisCount = 0;
-      XAxisRate = 1;
-      
-      YAxisStepDesiredPosition = moveY;
-      YAxisCount = 0;
-      YAxisRate = 1;
-    } else if (message.startsWith("G1")){
-      int moveX = message.substring(message.indexOf("X") + 1).toInt();
-      int moveY = message.substring(message.indexOf("Y") + 1).toInt();
-      
-      Serial.print("Move X:");
-      Serial.print(moveX);
-      Serial.print(" Y:");
-      Serial.print(moveY);
-      Serial.println();
-
-      XAxisStepDesiredPosition = moveX;
-      XAxisCount = 0;
-      XAxisRate = 10;
-      
-      YAxisStepDesiredPosition = moveY;
-      YAxisCount = 0;
-      YAxisRate = 10;
-    } else {
+    bool processed = false;
+    if (message.startsWith("M"))      processed = MessageM(message);
+    else if (message.startsWith("G")) processed = MessageG(message);
+    else if (message.startsWith("V")) processed = MessageV(message);
+   
+    if (!processed) {
       Serial.print("Unprocessed Message: '");
       Serial.print(message);
       Serial.println("'");
@@ -207,95 +266,33 @@ void Controller() {
 }
 
 boolean IsMachineMoving() {
-  if ((XAxisStepDesiredPosition != XAxisStepCurrentPosition) ||
-      (YAxisStepDesiredPosition != YAxisStepCurrentPosition))
-    return true;
+  if ((XAxisController.distanceToGo() == 0) &&
+      (YAxisController.distanceToGo() == 0))
+    return false;
 
-  return false;
+  return true;
 }
 
-void XAxisController() {
-  if (XAxisStepDesiredPosition != XAxisStepCurrentPosition) {
-    XAxisCount--; // Decrement the count so we know the next pulse that we need...
-    if (XAxisCount <= 0) {
-      XAxisCount = XAxisRate; // Set the count to the rate...
+void MotorsOff() {
+  //XAxisController.disableOutputs();
+  //YAxisController.disableOutputs();
 
-      // Set the direction
-      if ((XAxisStepDesiredPosition > XAxisStepCurrentPosition) && digitalRead(XAxisDirPin))
-        digitalWrite(XAxisDirPin, LOW);
-      if ((XAxisStepDesiredPosition < XAxisStepCurrentPosition) && !digitalRead(XAxisDirPin))
-        digitalWrite(XAxisDirPin, HIGH);
-
-      // Now step the motor and update the position on the return to low...
-      if (digitalRead(XAxisStpPin)) {
-        digitalWrite(XAxisStpPin, LOW);
-
-        if (XAxisStepDesiredPosition > XAxisStepCurrentPosition)
-          XAxisStepCurrentPosition ++;
-        else
-          XAxisStepCurrentPosition --;
-      } else {
-        digitalWrite(XAxisStpPin, HIGH);
-      }
-    }
-  }
+  digitalWrite(EnableSteppers, HIGH); 
 }
 
-void YAxisController() {
-  if (YAxisStepDesiredPosition != YAxisStepCurrentPosition) {
-    YAxisCount--; // Decrement the count so we know the next pulse that we need...
-    if (YAxisCount <= 0) {
-      YAxisCount = YAxisRate; // Set the count to the rate...
+void MotorsOn() {
+  //XAxisController.enableOutputs();
+  //YAxisController.enableOutputs();
 
-      // Set the direction
-      if ((YAxisStepDesiredPosition > YAxisStepCurrentPosition) && digitalRead(YAxisDirPin))
-        digitalWrite(YAxisDirPin, LOW);
-      if ((YAxisStepDesiredPosition < YAxisStepCurrentPosition) && !digitalRead(YAxisDirPin))
-        digitalWrite(YAxisDirPin, HIGH);
-
-      // Now step the motor and update the position on the return to low...
-      if (digitalRead(YAxisStpPin)) {
-        digitalWrite(YAxisStpPin, LOW);
-
-        if (YAxisStepDesiredPosition > YAxisStepCurrentPosition)
-          YAxisStepCurrentPosition ++;
-        else
-          YAxisStepCurrentPosition --;
-      } else {
-        digitalWrite(YAxisStpPin, HIGH);
-      }
-    }
-  }
+  digitalWrite(EnableSteppers, LOW);
 }
 
-void StepMotor(int axis, int stepDirection) {
-  switch(axis) {
-    case XAxis: 
-      StepXAxis(stepDirection);
-      break;
-    case YAxis:
-      StepYAxis(stepDirection);
-      break;
-  }
+void LaserOff() {
+
 }
 
-void StepXAxis(int stepDirection) {
-  SingleStepMotor(XAxisStpPin, XAxisDirPin, stepDirection);
-}
-
-void StepYAxis(int stepDirection) {
-  SingleStepMotor(YAxisStpPin, YAxisDirPin, stepDirection);
-}
-
-void SingleStepMotor(int stpPin, int dirPin, int stepDirection) {
-  if (stepDirection == Forward && digitalRead(dirPin))
-    digitalWrite(dirPin, LOW);
-  if (stepDirection == Backward && !digitalRead(dirPin))
-    digitalWrite(dirPin, HIGH);
-
-  digitalWrite(stpPin, HIGH);
-  delay(DelayMSecs);
-  digitalWrite(stpPin, LOW);
-  delay(DelayMSecs);
+void MachineOff() {
+  MotorsOff();
+  LaserOff();
 }
 
